@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import types
 
 from copy import deepcopy
 
@@ -14,54 +15,48 @@ from .timer import Timer
 log = logging.getLogger(__name__)
 
 
-def import_task(name):
-    internal_pkg = __import__('teuthology.task', globals(), locals(), [name],
-                              0)
-    if hasattr(internal_pkg, name):
-        return getattr(internal_pkg, name)
-    else:
-        external_pkg = __import__('tasks', globals(), locals(),
-                                  [name], 0)
-    if hasattr(external_pkg, name):
-        return getattr(external_pkg, name)
-    raise ImportError("Could not find task '%s'" % name)
-
-
 def get_task(name):
-    task = _import('teuthology.task', name)
-    if not task:
-        task = _import('tasks', name)
-    if not task:
+    if '.' in name:
+        module_name, task_name = name.split('.')
+    else:
+        module_name, task_name = (name, 'task')
+
+    # First look for the tasks's module inside teuthology
+    module = _import('teuthology.task', module_name, task_name)
+    # If it is not found, try ceph-qa-suite (if it is in sys.path)
+    if not module:
+        module = _import('tasks', module_name, task_name)
+    # If it is still not found, fail
+    if not module:
         raise ImportError("Could not find task '{}'".format(name))
+    try:
+        # Attempt to locate the task object inside the module
+        task = getattr(module, task_name)
+        # If we get another module, we need to go deeper
+        if isinstance(task, types.ModuleType):
+            task = getattr(task, task_name)
+    except AttributeError:
+        log.error("No subtask of '{}' named '{}' was found".format(
+            module_name,
+            task_name,
+        ))
+        raise
     return task
 
 
-def _import(from_package, name):
-    split_name = name.split('.')
-    # If the object with the requested name is a module, the actual task
-    # object will be called 'task'
-    possible_tasks = ['task', split_name[-1]]
-    # Depending on the above, the module we import (to get the task object)
-    # will differ.
-    possible_modules = [
-        '.'.join([from_package] + split_name),
-        '.'.join([from_package] + split_name[:-1]),
-    ]
-    for module_name in possible_modules:
-        try:
-            module = __import__(
-                module_name,
-                globals(),
-                locals(),
-                possible_tasks,
-                0,
-            )
-            break
-        except ImportError:
-            pass
-    for task_name in possible_tasks:
-        if hasattr(module, task_name):
-            return getattr(module, task_name)
+def _import(from_package, module_name, task_name):
+    full_module_name = '.'.join([from_package, module_name])
+    try:
+        module = __import__(
+            full_module_name,
+            globals(),
+            locals(),
+            [task_name],
+            0,
+        )
+    except ImportError:
+        return None
+    return module
 
 
 def run_one_task(taskname, **kwargs):
