@@ -27,22 +27,47 @@ def import_task(name):
     raise ImportError("Could not find task '%s'" % name)
 
 
+def get_task(name):
+    task = _import('teuthology.task', name)
+    if not task:
+        task = _import('tasks', name)
+    if not task:
+        raise ImportError("Could not find task '{}'".format(name))
+    return task
+
+
+def _import(from_package, name):
+    split_name = name.split('.')
+    # If the object with the requested name is a module, the actual task
+    # object will be called 'task'
+    possible_tasks = ['task', split_name[-1]]
+    # Depending on the above, the module we import (to get the task object)
+    # will differ.
+    possible_modules = [
+        '.'.join([from_package] + split_name),
+        '.'.join([from_package] + split_name[:-1]),
+    ]
+    for module_name in possible_modules:
+        try:
+            module = __import__(
+                module_name,
+                globals(),
+                locals(),
+                possible_tasks,
+                0,
+            )
+            break
+        except ImportError:
+            pass
+    for task_name in possible_tasks:
+        if hasattr(module, task_name):
+            return getattr(module, task_name)
+
+
 def run_one_task(taskname, **kwargs):
-    submod = taskname
-    subtask = 'task'
-    if '.' in taskname:
-        (submod, subtask) = taskname.rsplit('.', 1)
-
-    # Teuthology configs may refer to modules like ceph_deploy as ceph-deploy
-    submod = submod.replace('-', '_')
-
-    task = import_task(submod)
-    try:
-        fn = getattr(task, subtask)
-    except AttributeError:
-        log.error("No subtask of %s named %s was found", task, subtask)
-        raise
-    return fn(**kwargs)
+    taskname = taskname.replace('-', '_')
+    task = get_task(taskname)
+    return task(**kwargs)
 
 
 def run_tasks(tasks, ctx):
