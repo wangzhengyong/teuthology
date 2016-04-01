@@ -35,8 +35,8 @@ Linux)
             fi
         fi
         ;;
-    Fedora)
-        for package in python-pip python-virtualenv libev-devel libvirt-devel community-mysql-devel libffi-devel; do
+    Fedora|RedHatEnterpriseWorkstation)
+        for package in python-pip python-virtualenv libev-devel libvirt-devel mysql-community-devel openssl-devel libffi-devel; do
 	    if [ "$(rpm -q $package)" == "package $package is not installed" ]; then
 		missing="${missing:+$missing }$package"
 	    fi
