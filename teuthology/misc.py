@@ -906,6 +906,13 @@ def get_scratch_devices(remote):
                     'grep', '-q', dev,
                 ]
             )
+            remote.run(
+                args=[
+                    'sudo', 'sgdisk',
+                    '--zap-all', '--clear', '--mbrtogpt', run.Raw('-g -- '),
+                    dev
+                ],
+            )
             retval.append(dev)
         except CommandFailedError:
             log.debug("get_scratch_devices: %s is in use" % dev)
