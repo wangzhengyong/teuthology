@@ -200,6 +200,7 @@ class DaemonState(object):
             self.remote.run(args=self.list_proc_id, stdout=out)
             proc_id = out.getvalue().strip()
             self.log.info("Sending signal %s to process %s", sig, proc_id)
+            sig = '-' + str(sig)
             self.remote.run(args=['sudo', 'kill', str(sig), proc_id])
             return
         self.proc.stdin.write(struct.pack('!b', sig))
