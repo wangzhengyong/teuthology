@@ -51,7 +51,7 @@ class DaemonState(object):
                 self.id = remote.shortname
             else:
                 self.id = id_
-            self.proc_regex = self.proc_name + '.*' + self.id
+            self.proc_regex = '"' + self.proc_name + '.*--id ' + self.id + '"'
             self.list_proc_id = ['ps', '-ef',
                                  run.Raw('|'),
                                  'grep',
@@ -258,6 +258,7 @@ class DaemonGroup(object):
         dictionary of DaemonState values indexed by an id parameter.
         """
         self.daemons = {}
+        self.use_init = False
         if use_init:
             # will use the systemd init instead of old sytle daemons
             self.use_init = True
