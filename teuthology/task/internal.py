@@ -10,7 +10,8 @@ import os
 import time
 import yaml
 import subprocess
-
+import requests
+from tempfile import NamedTemporaryFile
 from teuthology import lockstatus
 from teuthology import lock
 from teuthology import misc
@@ -97,7 +98,8 @@ def lock_machines(ctx, config):
                 raise RuntimeError('Error listing machines')
 
         # make sure there are machines for non-automated jobs to run
-        if len(machines) < reserved + requested and ctx.owner.startswith('scheduled'):
+        if len(machines) < reserved + \
+                requested and ctx.owner.startswith('scheduled'):
             if ctx.block:
                 log.info(
                     'waiting for more %s machines to be free (need %s + %s, have %s)...',
@@ -233,7 +235,7 @@ def check_lock(ctx, config, check_up=True):
                 name=machine,
                 user=status['locked_by'],
                 owner=ctx.owner,
-            )
+        )
 
 
 def check_packages(ctx, config):
@@ -285,8 +287,7 @@ def check_packages(ctx, config):
             "Checking packages skipped, missing os_type '{os}' or ceph hash '{ver}'".format(
                 os=os_type,
                 ver=sha1,
-            )
-        )
+            ))
 
 
 @contextlib.contextmanager
@@ -302,6 +303,75 @@ def timer(ctx, config):
         duration = time.time() - start
         log.info('Duration was %f seconds', duration)
         ctx.summary['duration'] = duration
+
+
+@contextlib.contextmanager
+def setup_rh_repo(ctx, config):
+    """
+    Setup repo based on redhat nodes
+    """
+    for remote in ctx.cluster.remotes.iterkeys():
+        if remote.os.package_type == 'rpm':
+            base_url = ctx.config.get('base_repo_url', '')
+            installer_url = ctx.config.get('installer_repo_url', '')
+            repos = ['MON', 'OSD', 'Tools', 'Calamari', 'Installer']
+            installer_repos = ['Agent', 'Main', 'Installer']
+            if ctx.config.get('base_rh_repos'):
+                repos = ctx.config.get('base_rh_repos')
+            if ctx.config.get('installer_repos'):
+                installer_repos = ctx.config.get('installer_repos')
+            # create base repo
+            if base_url.startswith('http'):
+                repo_to_use = _get_repos_to_use(base_url, repos)
+                base_repo_file = NamedTemporaryFile(delete=False)
+                _create_temp_repo_file(repo_to_use, base_repo_file)
+                remote.put_file(base_repo_file.name, base_repo_file.name)
+                remote.run(args=['sudo', 'cp', base_repo_file.name,
+                                 '/etc/yum.repos.d/rh_ceph.repo'])
+            if installer_url.startswith('http'):
+                irepo_to_use = _get_repos_to_use(
+                    installer_url, installer_repos)
+                installer_file = NamedTemporaryFile(delete=False)
+                _create_temp_repo_file(irepo_to_use, installer_file)
+                remote.put_file(installer_file.name, installer_file.name)
+                remote.run(args=['sudo', 'cp', installer_file.name,
+                                 '/etc/yum.repos.d/rh_inst.repo'])
+    try:
+        yield
+    finally:
+        log.info("Cleaning up repo's")
+        for remote in ctx.cluster.remotes.iterkeys():
+            if remote.os.package_type == 'rpm':
+                remote.run(args=['sudo', 'rm',
+                                 '/etc/yum.repos.d/rh*.repo',
+                                 ], check_status=False)
+
+
+def _get_repos_to_use(base_url, repos):
+    repod = dict()
+    for repo in repos:
+        repo_to_use = base_url + "compose/" + repo + "/x86_64/os/"
+        r = requests.get(repo_to_use)
+        log.info("Checking %s", repo_to_use)
+        if r.status_code == 200:
+            log.info("Using %s", repo_to_use)
+            repod[repo] = repo_to_use
+    return repod
+
+
+def _create_temp_repo_file(repos, repo_file):
+    for repo in repos.keys():
+        header = "[ceph-" + repo + "]" + "\n"
+        name = "name=ceph-" + repo + "\n"
+        baseurl = "baseurl=" + repos[repo] + "\n"
+        gpgcheck = "gpgcheck=0\n"
+        enabled = "enabled=1\n\n"
+        repo_file.write(header)
+        repo_file.write(name)
+        repo_file.write(baseurl)
+        repo_file.write(gpgcheck)
+        repo_file.write(enabled)
+    repo_file.close()
 
 
 def add_remotes(ctx, config):
@@ -361,6 +431,7 @@ BUILDPACKAGES_OK = 1
 BUILDPACKAGES_REMOVED = 2
 BUILDPACKAGES_NOTHING = 3
 
+
 def buildpackages_prep(ctx, config):
     """
     Make sure the 'buildpackages' task happens before
@@ -386,7 +457,7 @@ def buildpackages_prep(ctx, config):
             buildpackages_prep_index = index
         index += 1
     if (buildpackages_index is not None and
-        install_index is not None):
+            install_index is not None):
         if buildpackages_index > buildpackages_prep_index + 1:
             log.info('buildpackages moved to be the first task')
             buildpackages = ctx.config['tasks'].pop(buildpackages_index)
@@ -416,7 +487,8 @@ def serialize_remote_roles(ctx, config):
         with file(os.path.join(ctx.archive, 'info.yaml'), 'r+') as info_file:
             info_yaml = yaml.safe_load(info_file)
             info_file.seek(0)
-            info_yaml['cluster'] = dict([(rem.name, {'roles': roles}) for rem, roles in ctx.cluster.remotes.iteritems()])
+            info_yaml['cluster'] = dict(
+                [(rem.name, {'roles': roles}) for rem, roles in ctx.cluster.remotes.iteritems()])
             yaml.safe_dump(info_yaml, info_file, default_flow_style=False)
 
 
@@ -434,7 +506,9 @@ def check_ceph_data(ctx, config):
         try:
             proc.wait()
         except run.CommandFailedError:
-            log.error('Host %s has stale /var/lib/ceph, check lock and nuke/cleanup.', proc.remote.shortname)
+            log.error(
+                'Host %s has stale /var/lib/ceph, check lock and nuke/cleanup.',
+                proc.remote.shortname)
             failed = True
     if failed:
         raise RuntimeError('Stale /var/lib/ceph detected, aborting.')
@@ -455,7 +529,10 @@ def check_conflict(ctx, config):
         try:
             proc.wait()
         except run.CommandFailedError:
-            log.error('Host %s has stale test directory %s, check lock and cleanup.', proc.remote.shortname, testdir)
+            log.error(
+                'Host %s has stale test directory %s, check lock and cleanup.',
+                proc.remote.shortname,
+                testdir)
             failed = True
     if failed:
         raise RuntimeError('Stale jobs detected, aborting.')
@@ -478,7 +555,8 @@ def fetch_binaries_for_coredumps(path, remote):
 
             # Parse file output to get program, Example output:
             # 1422917770.7450.core: ELF 64-bit LSB core file x86-64, version 1 (SYSV), SVR4-style, \
-            # from 'radosgw --rgw-socket-path /home/ubuntu/cephtest/apache/tmp.client.0/fastcgi_soc'
+            # from 'radosgw --rgw-socket-path
+            # /home/ubuntu/cephtest/apache/tmp.client.0/fastcgi_soc'
             dump_program = dump_out.split("from '")[1].split(' ')[0]
 
             # Find path on remote server:
@@ -601,7 +679,8 @@ def coredump(ctx, config):
                 args=[
                     'sudo', 'sysctl', '-w', 'kernel.core_pattern=core',
                     run.Raw('&&'),
-                    # don't litter the archive dir if there were no cores dumped
+                    # don't litter the archive dir if there were no cores
+                    # dumped
                     'rmdir',
                     '--ignore-fail-on-non-empty',
                     '--',
@@ -614,16 +693,23 @@ def coredump(ctx, config):
         # set status = 'fail' if the dir is still there = coredumps were
         # seen
         for rem in ctx.cluster.remotes.iterkeys():
-            r = rem.run(
-                args=[
-                    'if', 'test', '!', '-e', '{adir}/coredump'.format(adir=archive_dir), run.Raw(';'), 'then',
-                    'echo', 'OK', run.Raw(';'),
-                    'fi',
-                ],
-                stdout=StringIO(),
-            )
+            r = rem.run(args=['if',
+                              'test',
+                              '!',
+                              '-e',
+                              '{adir}/coredump'.format(adir=archive_dir),
+                              run.Raw(';'),
+                              'then',
+                              'echo',
+                              'OK',
+                              run.Raw(';'),
+                              'fi',
+                              ],
+                        stdout=StringIO(),
+                        )
             if r.stdout.getvalue() != 'OK\n':
-                log.warning('Found coredumps on %s, flagging run as failed', rem)
+                log.warning(
+                    'Found coredumps on %s, flagging run as failed', rem)
                 set_status(ctx.summary, 'fail')
                 if 'failure_reason' not in ctx.summary:
                     ctx.summary['failure_reason'] = \
@@ -655,13 +741,15 @@ def archive_upload(ctx, config):
         else:
             log.info('Not uploading archives.')
 
+
 @contextlib.contextmanager
 def syslog(ctx, config):
     """
     start syslog / stop syslog on exit.
     """
     if ctx.archive is None:
-        # disable this whole feature if we're not going to archive the data anyway
+        # disable this whole feature if we're not going to archive the data
+        # anyway
         yield
         return
 
@@ -760,7 +848,8 @@ def syslog(ctx, config):
                     run.Raw('|'),
                     'grep', '-v', '*** DEADLOCK ***',  # part of lockdep output
                     run.Raw('|'),
-                    'grep', '-v', 'INFO: possible irq lock inversion dependency detected',  # FIXME see #2590 and #147
+                    # FIXME see #2590 and #147
+                    'grep', '-v', 'INFO: possible irq lock inversion dependency detected',
                     run.Raw('|'),
                     'grep', '-v', 'INFO: NMI handler (perf_event_nmi_handler) took too long to run',
                     run.Raw('|'),

@@ -218,7 +218,7 @@ def get_initial_tasks(lock, config, machine_type):
             {'internal.syslog': None},
         ])
     init_tasks.append({'internal.timer': None})
-    
+    init_tasks.append({'internal.setup_rh_repo': None})
     if 'test-mode' in config:
         init_tasks.extend([
             {'clock.check': None}
