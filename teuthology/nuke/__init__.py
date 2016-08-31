@@ -322,12 +322,6 @@ def nuke_helper(ctx, should_unlock):
     clear_firewall(ctx)
     log.info("Cleared teuthology firewall rules.")
 
-    log.info('Unmount ceph-fuse and killing daemons...')
-    shutdown_daemons(ctx)
-    log.info('All daemons killed.')
-    # Try to remove packages before reboot
-    remove_installed_packages(ctx)
-
     remotes = ctx.cluster.remotes.keys()
     reboot(ctx, remotes)
     # shutdown daemons again incase of startup
