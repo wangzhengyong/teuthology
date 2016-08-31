@@ -343,7 +343,7 @@ def setup_rh_repo(ctx, config):
         for remote in ctx.cluster.remotes.iterkeys():
             if remote.os.package_type == 'rpm':
                 remote.run(args=['sudo', 'rm',
-                                 '/etc/yum.repos.d/rh*.repo',
+                                 run.Raw('/etc/yum.repos.d/rh*.repo'),
                                  ], check_status=False)
 
 
