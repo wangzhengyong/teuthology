@@ -790,6 +790,39 @@ def rh_install_pkgs(ctx, remote, version, rh_ds_yaml):
         raise RuntimeError("Version check failed on node %s", remote.shortname)
 
 
+def rh_install_deb_pkgs(
+        ctx,
+        remote,
+        version,
+        rh_ds_yaml,
+        deb_repo,
+        deb_gpg_key):
+    """
+    Setup debian repo, Install gpg key
+    and Install on debian packages
+    : param ctx
+    : param remote
+    """
+    set_rh_deb_repo(remote, deb_repo, deb_gpg_key)
+    rh_version_check = rh_ds_yaml.get('versions').get('deb').get('mapped')
+    rh_deb_pkgs = rh_ds_yaml.get('pkgs').get('deb')
+    pkgs = str.join(' ', rh_deb_pkgs)
+    log.info("Installing redhat ceph packages")
+    remote.run(args=['sudo', 'apt-get', '-y', 'install',
+                     run.Raw(pkgs)])
+    # check package version
+    installed_version = packaging.get_package_version(remote, 'ceph-common')
+    log.info(
+        "Node: {n} Ceph version installed is {v}".format(
+            n=remote.shortname,
+            v=version))
+    req_ver = rh_version_check[version]
+    if installed_version.startswith(req_ver):
+        log.info("Installed version matches on %s", remote.shortname)
+    else:
+        raise RuntimeError("Version check failed on node %s", remote.shortname)
+
+
 def set_rh_deb_repo(remote, deb_repo, deb_gpg_key=None):
     """
     Sets up debian repo and gpg key for package verification
