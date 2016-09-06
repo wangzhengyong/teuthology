@@ -790,6 +790,34 @@ def rh_install_pkgs(ctx, remote, version, rh_ds_yaml):
         raise RuntimeError("Version check failed on node %s", remote.shortname)
 
 
+def set_rh_deb_repo(remote, deb_repo, deb_gpg_key=None):
+    """
+    Sets up debian repo and gpg key for package verification
+    """
+    repos = ['MON', 'OSD', 'Tools']
+    log.info("deb repo: %s", deb_repo)
+    log.info("gpg key url: %s", deb_gpg_key)
+    remote.run(args=['sudo', 'rm', '-f', run.Raw('/etc/apt/sources.list.d/*')],
+               check_status=False)
+    for repo in repos:
+        cmd = 'echo deb ' + deb_repo + '/{0}'.format(repo) + \
+              ' $(lsb_release -sc) main'
+        remote.run(args=['sudo', run.Raw(cmd), run.Raw('>'),
+                         "/tmp/{0}.list".format(repo)])
+        remote.run(args=['sudo', 'cp', "/tmp/{0}.list".format(repo),
+                         '/etc/apt/sources.list.d/'])
+    # add ds gpgkey
+    ds_keys = ['https://www.redhat.com/security/897da07a.txt',
+               'https://www.redhat.com/security/f21541eb.txt']
+    if deb_gpg_key is not None:
+        ds_keys.append(deb_gpg_key)
+    for key in ds_keys:
+        wget_cmd = 'wget -O - ' + key
+        remote.run(args=['sudo', run.Raw(wget_cmd),
+                         run.Raw('|'), 'sudo', 'apt-key', 'add', run.Raw('-')])
+    remote.run(args=['sudo', 'apt-get', 'update'])
+
+
 def rh_uninstall_pkgs(ctx, remote):
     """
     Removes Ceph from all RH hosts
