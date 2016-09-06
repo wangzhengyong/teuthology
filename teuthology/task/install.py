@@ -3,7 +3,6 @@ from cStringIO import StringIO
 import contextlib
 import copy
 import logging
-import time
 import os
 import subprocess
 import yaml
@@ -743,19 +742,6 @@ def rh_install(ctx, config):
                     p.spawn(rh_uninstall_pkgs, ctx, remote, rh_ds_yaml)
 
 
-def rh_uninstall(ctx, config):
-    """
-     Uninstalls rh ceph on all hosts.
-     It actually spawns rh_uninstall_pkgs() on the remotes for uninstall.
-
-    :param ctx: the argparse.Namespace object
-    :param config: the config dict
-    """
-    with parallel() as p:
-        for remote in ctx.cluster.remotes.iterkeys():
-            p.spawn(rh_uninstall_pkgs, ctx, remote)
-
-
 def rh_install_pkgs(ctx, remote, version, rh_ds_yaml):
     """
     Installs RH build using ceph-deploy.
@@ -851,22 +837,24 @@ def set_rh_deb_repo(remote, deb_repo, deb_gpg_key=None):
     remote.run(args=['sudo', 'apt-get', 'update'])
 
 
-def rh_uninstall_pkgs(ctx, remote):
+def rh_uninstall_pkgs(ctx, remote, rh_ds_yaml):
     """
     Removes Ceph from all RH hosts
 
     :param ctx: the argparse.Namespace object
     :param remote: the teuthology.orchestra.remote.Remote object
     """
-    log.info("uninstalling packages using ceph-deploy on node %s", remote.shortname)
-    r = remote.run(args=['date'], check_status=False)
-    host = r.hostname
-    remote.run(args=['sudo', 'ceph-deploy', 'uninstall', host])
-    time.sleep(4)
-    remote.run(args=['sudo', 'ceph-deploy', 'purgedata', host])
-    log.info("Uninstalling ceph-deploy")
-    remote.run(args=['sudo', 'yum', 'remove', 'ceph-deploy', '-y'], check_status=False)
-    remote.run(args=['sudo', 'yum', 'remove', 'ceph-test', '-y'], check_status=False)
+    rh_rpm_pkgs = rh_ds_yaml.get('pkgs').get('rpm')
+    rpm_pkgs = str.join(' ', rh_rpm_pkgs)
+
+    rh_deb_pkgs = rh_ds_yaml.get('pkgs').get('deb')
+    deb_pkgs = str.join(' ', rh_deb_pkgs)
+
+    if remote.os.name == 'rhel':
+        remote.run(args=['sudo', 'yum', 'remove', run.Raw(rpm_pkgs), '-y'])
+    else:
+        remote.run(args=['sudo', 'apt-get', 'remove', run.Raw(deb_pkgs), '-y'])
+    remote.run(args=['sudo', 'rm', '-rf', '/var/lib/ceph'])
 
 
 def _upgrade_rpm_packages(ctx, config, remote, pkgs):
