@@ -702,28 +702,45 @@ def rh_install(ctx, config):
     :param ctx: the argparse.Namespace object
     :param config: the config dict
     """
+    yaml_path = None
+    # Look for rh specific packages in <suite_path>/rh/downstream.yaml
+    if 'suite_path' in ctx.config:
+        ds_yaml = os.path.join(
+            ctx.config['suite_path'],
+            'rh',
+            'downstream.yaml',
+        )
+        if os.path.exists(ds_yaml):
+            yaml_path = ds_yaml
+    # default to user home dir if one exists
+    default_yaml = os.path.expanduser('~/downstream.yaml')
+    if os.path.exists(default_yaml):
+        yaml_path = default_yaml
+    rh_ds_yaml = yaml.safe_load(open(yaml_path))
+    rh_versions = rh_ds_yaml.get('versions', dict()).get('supported', [])
     version = config['rhbuild']
-    rh_versions = ['1.3.0', '1.3.1', '1.3.2', '2.0']
     if version in rh_versions:
         log.info("%s is a supported version", version)
     else:
         raise RuntimeError("Unsupported RH Ceph version %s", version)
-
     with parallel() as p:
         for remote in ctx.cluster.remotes.iterkeys():
             if remote.os.name == 'rhel':
                 log.info("Installing on RHEL node: %s", remote.shortname)
-                p.spawn(rh_install_pkgs, ctx, remote, version)
+                p.spawn(rh_install_pkgs, ctx, remote, version, rh_ds_yaml)
             else:
-                log.info("Node %s is not RHEL", remote.shortname)
-                raise RuntimeError("Test requires RHEL nodes")
+                log.info("Install on Ubuntu node: %s", remote.shortname)
+                p.spawn(rh_install_deb_pkgs, ctx, remote, version, rh_ds_yaml,
+                        config['deb-repo'], config['deb-gpg-key'])
     try:
         yield
     finally:
         if config.get('skip_uninstall'):
             log.info("Skipping uninstall of Ceph")
         else:
-            rh_uninstall(ctx=ctx, config=config)
+            with parallel() as p:
+                for remote in ctx.cluster.remotes.iterkeys():
+                    p.spawn(rh_uninstall_pkgs, ctx, remote, rh_ds_yaml)
 
 
 def rh_uninstall(ctx, config):
