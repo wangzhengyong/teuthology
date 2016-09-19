@@ -287,8 +287,7 @@ class ResultsReporter(object):
             job_info = self.serializer.job_info(run_name, job_id)
         if dead and get_status(job_info) is None:
             set_status(job_info, 'dead')
-        self.log.info("Job info %s", job_info)
-        #self.log.info("Job json %s", job_json)
+        job_json = json.dumps(job_info)
         job_json = json.dumps(job_info)
         headers = {'content-type': 'application/json'}
         response = self.session.post(run_uri, data=job_json, headers=headers)

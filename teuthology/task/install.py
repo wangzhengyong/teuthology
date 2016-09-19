@@ -37,10 +37,11 @@ def _get_local_dir(config, remote):
     """
     ldir = config.get('local', None)
     if ldir:
-        remote.run(args=['sudo', 'mkdir', '-p', ldir,])
+        remote.run(args=['sudo', 'mkdir', '-p', ldir, ])
         for fyle in os.listdir(ldir):
             fname = "%s/%s" % (ldir, fyle)
-            teuthology.sudo_write_file(remote, fname, open(fname).read(), '644')
+            teuthology.sudo_write_file(
+                remote, fname, open(fname).read(), '644')
     return ldir
 
 
@@ -69,10 +70,15 @@ def _update_deb_package_list_and_install(ctx, remote, debs, config):
         # if it doesn't exist, add it
         remote.run(
             args=[
-                'wget', '-q', '-O-',
+                'wget',
+                '-q',
+                '-O-',
                 'http://git.ceph.com/?p=ceph.git;a=blob_plain;f=keys/autobuild.asc',
                 run.Raw('|'),
-                'sudo', 'apt-key', 'add', '-',
+                'sudo',
+                'apt-key',
+                'add',
+                '-',
             ],
             stdout=StringIO(),
         )
@@ -251,20 +257,20 @@ def _update_rpm_package_list_and_install(ctx, remote, rpm, config):
                 cpack=cpack,
             )
             remote.run(
-                args = ['if', 'test', '-e',
-                        run.Raw(pkg), run.Raw(';'), 'then',
-                        'sudo', 'yum', 'remove', pkg, '-y', run.Raw(';'),
-                        'sudo', 'yum', 'install', pkg, '-y',
-                        run.Raw(';'), 'fi']
+                args=['if', 'test', '-e',
+                      run.Raw(pkg), run.Raw(';'), 'then',
+                      'sudo', 'yum', 'remove', pkg, '-y', run.Raw(';'),
+                      'sudo', 'yum', 'install', pkg, '-y',
+                      run.Raw(';'), 'fi']
             )
         if pkg is None:
             remote.run(args=['sudo', 'yum', 'install', cpack, '-y'])
         else:
             remote.run(
-                args = ['if', 'test', run.Raw('!'), '-e',
-                        run.Raw(pkg), run.Raw(';'), 'then',
-                        'sudo', 'yum', 'install', cpack, '-y',
-                        run.Raw(';'), 'fi'])
+                args=['if', 'test', run.Raw('!'), '-e',
+                      run.Raw(pkg), run.Raw(';'), 'then',
+                      'sudo', 'yum', 'install', cpack, '-y',
+                      run.Raw(';'), 'fi'])
 
 
 def verify_package_version(ctx, config, remote):
@@ -379,21 +385,27 @@ def _remove_deb(ctx, config, remote, debs):
     log.info("Removing packages: {pkglist} on Debian system.".format(
         pkglist=", ".join(debs)))
     # first ask nicely
-    remote.run(
-        args=[
-            'for', 'd', 'in',
-        ] + debs + [
-            run.Raw(';'),
-            'do',
-            'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y', '--force-yes',
-            '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
-                'Dpkg::Options::="--force-confold"'), 'purge',
-            run.Raw('$d'),
-            run.Raw('||'),
-            'true',
-            run.Raw(';'),
-            'done',
-        ])
+    remote.run(args=['for',
+                     'd',
+                     'in',
+                     ] + debs + [run.Raw(';'),
+                                 'do',
+                                 'sudo',
+                                 'DEBIAN_FRONTEND=noninteractive',
+                                 'apt-get',
+                                 '-y',
+                                 '--force-yes',
+                                 '-o',
+                                 run.Raw('Dpkg::Options::="--force-confdef"'),
+                                 '-o',
+                                 run.Raw('Dpkg::Options::="--force-confold"'),
+                                 'purge',
+                                 run.Raw('$d'),
+                                 run.Raw('||'),
+                                 'true',
+                                 run.Raw(';'),
+                                 'done',
+                                 ])
     # mop up anything that is broken
     remote.run(
         args=[
@@ -412,9 +424,15 @@ def _remove_deb(ctx, config, remote, debs):
     # then let apt clean up
     remote.run(
         args=[
-            'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y', '--force-yes',
-            '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
-                'Dpkg::Options::="--force-confold"'),
+            'sudo',
+            'DEBIAN_FRONTEND=noninteractive',
+            'apt-get',
+            '-y',
+            '--force-yes',
+            '-o',
+            run.Raw('Dpkg::Options::="--force-confdef"'),
+            '-o',
+            run.Raw('Dpkg::Options::="--force-confold"'),
             'autoremove',
         ],
     )
@@ -658,10 +676,15 @@ def _upgrade_deb_packages(ctx, config, remote, debs):
         # if it doesn't exist, add it
         remote.run(
             args=[
-                'wget', '-q', '-O-',
+                'wget',
+                '-q',
+                '-O-',
                 'http://git.ceph.com/?p=ceph.git;a=blob_plain;f=keys/autobuild.asc',
                 run.Raw('|'),
-                'sudo', 'apt-key', 'add', '-',
+                'sudo',
+                'apt-key',
+                'add',
+                '-',
             ],
             stdout=StringIO(),
         )
@@ -685,14 +708,19 @@ def _upgrade_deb_packages(ctx, config, remote, debs):
         stdout=StringIO(),
     )
     remote.run(args=['sudo', 'apt-get', 'update'], check_status=False)
-    remote.run(
-        args=[
-            'sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y', '--force-yes',
-            '-o', run.Raw('Dpkg::Options::="--force-confdef"'), '-o', run.Raw(
-                'Dpkg::Options::="--force-confold"'),
-            'install',
-        ] + ['%s=%s' % (d, version) for d in debs],
-    )
+    remote.run(args=['sudo',
+                     'DEBIAN_FRONTEND=noninteractive',
+                     'apt-get',
+                     '-y',
+                     '--force-yes',
+                     '-o',
+                     run.Raw('Dpkg::Options::="--force-confdef"'),
+                     '-o',
+                     run.Raw('Dpkg::Options::="--force-confold"'),
+                     'install',
+                     ] + ['%s=%s' % (d,
+                                     version) for d in debs],
+               )
 
 
 @contextlib.contextmanager
@@ -744,7 +772,13 @@ def rh_install(ctx, config):
                     p.spawn(rh_uninstall_pkgs, ctx, remote, rh_ds_yaml)
 
 
-def rh_install_deb_pkgs(ctx, remote, version, rh_ds_yaml, deb_repo, deb_gpg_key):
+def rh_install_deb_pkgs(
+        ctx,
+        remote,
+        version,
+        rh_ds_yaml,
+        deb_repo,
+        deb_gpg_key):
     """
     Setup debian repo, Install gpg key
     and Install on debian packages
@@ -760,7 +794,10 @@ def rh_install_deb_pkgs(ctx, remote, version, rh_ds_yaml, deb_repo, deb_gpg_key)
                      run.Raw(pkgs)])
     # check package version
     installed_version = packaging.get_package_version(remote, 'ceph-common')
-    log.info("Node: {n} Ceph version installed is {v}".format(n=remote.shortname, v=version))
+    log.info(
+        "Node: {n} Ceph version installed is {v}".format(
+            n=remote.shortname,
+            v=version))
     req_ver = rh_version_check[version]
     if installed_version.startswith(req_ver):
         log.info("Installed version matches on %s", remote.shortname)
@@ -807,15 +844,23 @@ def rh_install_pkgs(ctx, remote, version, rh_ds_yaml):
     rh_rpm_pkgs = rh_ds_yaml.get('pkgs').get('rpm')
     pkgs = str.join(' ', rh_rpm_pkgs)
     log.info("Remove any epel packages installed on node %s", remote.shortname)
-    remote.run(args=['sudo', 'yum', 'remove', run.Raw("leveldb xmlstarlet fcgi"), '-y'],
-               check_status=False)
+    remote.run(
+        args=[
+            'sudo',
+            'yum',
+            'remove',
+            run.Raw("leveldb xmlstarlet fcgi"),
+            '-y'],
+        check_status=False)
     log.info("Installing redhat ceph packages")
     remote.run(args=['sudo', 'yum', '-y', 'install',
                      run.Raw(pkgs)])
     # check package version
     installed_version = packaging.get_package_version(remote, 'ceph-common')
-    log.info("Node: {n} Ceph version installed is {v}".format(n=remote.shortname,
-                                                              v=version))
+    log.info(
+        "Node: {n} Ceph version installed is {v}".format(
+            n=remote.shortname,
+            v=version))
     if rh_version_check[version] == installed_version:
         log.info("Installed version matches on %s", remote.shortname)
     else:
@@ -907,6 +952,7 @@ def upgrade_old_style(ctx, node, remote, pkgs, system_type):
     elif system_type == 'rpm':
         _upgrade_rpm_packages(ctx, node, remote, pkgs)
 
+
 def upgrade_with_ceph_deploy(ctx, node, remote, pkgs, sys_type):
     """
     Upgrade using ceph-deploy
@@ -927,6 +973,7 @@ def upgrade_with_ceph_deploy(ctx, node, remote, pkgs, sys_type):
     params.append(remote.name)
     subprocess.call(['ceph-deploy', 'install'] + params)
     remote.run(args=['sudo', 'restart', 'ceph-all'])
+
 
 def upgrade_remote_to_config(ctx, config):
     assert config is None or isinstance(config, dict), \
@@ -965,7 +1012,8 @@ def upgrade_remote_to_config(ctx, config):
 
         this_overrides = copy.deepcopy(install_overrides)
         if 'sha1' in node or 'tag' in node or 'branch' in node:
-            log.info('config contains sha1|tag|branch, removing those keys from override')
+            log.info(
+                'config contains sha1|tag|branch, removing those keys from override')
             this_overrides.pop('sha1', None)
             this_overrides.pop('tag', None)
             this_overrides.pop('branch', None)
@@ -998,7 +1046,7 @@ def upgrade_common(ctx, config, deploy_style):
         pkgs = list(set(pkgs).difference(set(excluded_packages)))
         log.info("Upgrading {proj} {system_type} packages: {pkgs}".format(
             proj=project, system_type=system_type, pkgs=', '.join(pkgs)))
-            # FIXME: again, make extra_pkgs distro-agnostic
+        # FIXME: again, make extra_pkgs distro-agnostic
         pkgs += extra_pkgs
 
         deploy_style(ctx, node, remote, pkgs, system_type)
@@ -1053,6 +1101,7 @@ docstring_for_upgrade = """"
 # look the same.
 #
 
+
 @contextlib.contextmanager
 def upgrade(ctx, config):
     upgrade_common(ctx, config, upgrade_old_style)
@@ -1060,13 +1109,15 @@ def upgrade(ctx, config):
 
 upgrade.__doc__ = docstring_for_upgrade.format(cmd_parameter='upgrade')
 
+
 @contextlib.contextmanager
 def ceph_deploy_upgrade(ctx, config):
     upgrade_common(ctx, config, upgrade_with_ceph_deploy)
     yield
 
 ceph_deploy_upgrade.__doc__ = docstring_for_upgrade.format(
-        cmd_parameter='ceph_deploy_upgrade')
+    cmd_parameter='ceph_deploy_upgrade')
+
 
 @contextlib.contextmanager
 def ship_utilities(ctx, config):
@@ -1091,7 +1142,7 @@ def ship_utilities(ctx, config):
                 remote=rem,
                 path=fn,
                 data=f,
-                )
+            )
             f.seek(0)
 
     FILES = ['daemon-helper', 'adjust-ulimits']
@@ -1289,12 +1340,14 @@ def task(ctx, config):
 
     if config.get('rhbuild'):
         if config.get('playbook'):
-            ansible_config=dict(config)
+            ansible_config = dict(config)
             # remove key not required by ansible task
             del ansible_config['rhbuild']
-            nested_tasks.insert(0, lambda: ansible.CephLab(ctx,config=ansible_config))
+            nested_tasks.insert(
+                0, lambda: ansible.CephLab(
+                    ctx, config=ansible_config))
         with contextutil.nested(*nested_tasks):
-                yield
+            yield
     else:
         with contextutil.nested(
             lambda: install(ctx=ctx, config=dict(
