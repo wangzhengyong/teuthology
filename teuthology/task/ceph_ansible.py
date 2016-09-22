@@ -5,7 +5,6 @@ import logging
 
 from cStringIO import StringIO
 
-from . import ansible
 from ..config import config as teuth_config
 from ..misc import get_scratch_devices
 from teuthology import contextutil
@@ -14,7 +13,7 @@ from teuthology import misc as teuthology
 log = logging.getLogger(__name__)
 
 
-class CephAnsible(ansible.Ansible):
+class CephAnsible(Task):
     name = 'ceph_ansible'
 
     _default_playbook = [
@@ -51,10 +50,11 @@ class CephAnsible(ansible.Ansible):
     ]
 
     __doc__ = """
-    A subclass of Ansible that defaults to:
+    A subclass of Task that defaults to:
 
     - ansible:
         repo: {git_base}ceph-ansible.git
+        branch: mybranch # defaults to master
         playbook: {playbook}
 
     It always uses a dynamic inventory.
@@ -98,13 +98,13 @@ class CephAnsible(ansible.Ansible):
         environ['ANSIBLE_ROLES_PATH'] = "%s/roles" % self.repo_path
         args = self._build_args()
         log.debug("Running %s", args)
+        (ceph_installer,) = self.ctx.cluster.only(
+            teuthology.get_first_mon(self.ctx,
+                                     self.config)).remotes.iterkeys()
+        self.installer_node = ceph_installer
         if self.config.get('rhbuild'):
-            (ceph_installer,) = self.ctx.cluster.only(
-                teuthology.get_first_mon(self.ctx,
-                                         self.config)).remotes.iterkeys()
-            self.installer_node = ceph_installer
-            ceph_installer.put_file(args[5], args[5])
-            ceph_installer.put_file(args[8], args[8])
+            ceph_installer.put_file(args[5], '/tmp/inven.yml')
+            ceph_installer.put_file(args[8], '/tmp/site.yml')
             ceph_installer.run(args=['cp', '-R',
                                      '/usr/share/ceph-ansible', '.'])
             ceph_installer.run(args=('cat', args[8], run.Raw('>'),
@@ -127,7 +127,57 @@ class CephAnsible(ansible.Ansible):
                 raise CephAnsibleError("Failed during ansible execution")
             self.setup_client_node()
         else:
-            super(CephAnsible, self).execute_playbook()
+            # super(CephAnsible, self).execute_playbook()
+            # setup ansible on first mon node
+            # use ansible < 2.0
+            if ceph_installer.os.package_type == 'rpm':
+                # install crypto packages for ansible
+                ceph_installer.run(args=['sudo', 'yum',
+                                         'install',
+                                         '-y',
+                                         'libffi-devel',
+                                         'python-devel',
+                                         'openssl-devel'])
+            else:
+                ceph_installer.run(args=['sudo', 'apt-get',
+                                         'install',
+                                         '-y',
+                                         'libssl-dev',
+                                         'libffi-dev',
+                                         'python-dev'])
+            ansible_repo = self.config['repo']
+            branch = None
+            if self.config.get('branch'):
+                branch = ' -b ' + self.config.get('branch')
+            ceph_installer.run(args=['mkdir',
+                                     run.Raw('~/ceph-ansible'),
+                                     run.Raw(';'),
+                                     'git',
+                                     'clone',
+                                     branch,
+                                     run.Raw(ansible_repo),])
+            import pdb
+            pdb.set_trace()
+            ceph_installer.put_file(args[5], './ceph-ansible/inven.yml')
+            ceph_installer.put_file(args[8], './ceph-ansible/site.yml')
+            args[5] = 'inven.yml'
+            args[8] = 'site.yml'
+            out = StringIO()
+            str_args = ' '.join(args)
+            ceph_installer.run(args=[run.Raw('cd ~/ceph-ansible'),
+                                     run.Raw(';'),
+                                     'virtualenv',
+                                     '--system-site-packages',
+                                     'venv',
+                                     run.Raw(';'),
+                                     run.Raw('source venv/bin/activate'),
+                                     run.Raw(';'),
+                                     'pip',
+                                     'install',
+                                     'ansible==1.9.4',
+                                     run.Raw(';'),
+                                     run.Raw(str_args)
+                                    ])
         wait_for_health = self.config.get('wait-for-health', True)
         if wait_for_health:
             self.wait_for_ceph_health()
