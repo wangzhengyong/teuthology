@@ -2,9 +2,12 @@ import json
 import os
 import re
 import logging
+import yaml
 
 from cStringIO import StringIO
 
+from . import Task
+from tempfile import NamedTemporaryFile
 from ..config import config as teuth_config
 from ..misc import get_scratch_devices
 from teuthology import contextutil
@@ -79,11 +82,23 @@ class CephAnsible(Task):
             self.config['repo'] = os.path.join(teuth_config.ceph_git_base_url,
                                                'ceph-ansible.git')
 
-    def get_inventory(self):
-        """
-        Stub this method so we always generate the hosts file
-        """
-        pass
+    def setup(self):
+        super(CephAnsible, self).setup()
+        # generate hosts file based on test config
+        self.generate_hosts_file()
+        # use default or user provided playbook file
+        pb_buffer = StringIO()
+        pb_buffer.write('---\n')
+        yaml.safe_dump(self.playbook, pb_buffer)
+        pb_buffer.seek(0)
+        playbook_file = NamedTemporaryFile(
+            prefix="ceph_ansible_playbook_",
+            dir='/tmp/',
+            delete=False,
+        )
+        playbook_file.write(pb_buffer.read())
+        playbook_file.flush()
+        self.playbook_file = playbook_file
 
     def execute_playbook(self, _logfile=None):
         """
@@ -92,12 +107,19 @@ class CephAnsible(Task):
         :param _logfile: Use this file-like object instead of a LoggerFile for
                          testing
         """
-        environ = os.environ
-        environ['ANSIBLE_SSH_PIPELINING'] = '1'
-        environ['ANSIBLE_FAILURE_LOG'] = self.failure_log.name
-        environ['ANSIBLE_ROLES_PATH'] = "%s/roles" % self.repo_path
-        args = self._build_args()
+
+        # everything from vars in config go into extra-vars
+        # TODO add option to directly copy them to group_vars/all
+        extra_vars = dict()
+        extra_vars.update(self.config.get('vars', dict()))
+        args = [
+            'ansible-playbook', '-v',
+            "--extra-vars", "'%s'" % json.dumps(extra_vars),
+            '-i', self.inventory,
+            self.playbook_file.name,
+        ]
         log.debug("Running %s", args)
+        # use the first mon node as installer node
         (ceph_installer,) = self.ctx.cluster.only(
             teuthology.get_first_mon(self.ctx,
                                      self.config)).remotes.iterkeys()
@@ -155,10 +177,10 @@ class CephAnsible(Task):
                                      'git',
                                      'clone',
                                      branch,
-                                     run.Raw(ansible_repo),])
-            import pdb
-            pdb.set_trace()
+                                     run.Raw(ansible_repo), ])
+            # copy the inventory file to installer node
             ceph_installer.put_file(args[5], './ceph-ansible/inven.yml')
+            # copy the site file
             ceph_installer.put_file(args[8], './ceph-ansible/site.yml')
             args[5] = 'inven.yml'
             args[8] = 'site.yml'
@@ -177,7 +199,7 @@ class CephAnsible(Task):
                                      'ansible==1.9.4',
                                      run.Raw(';'),
                                      run.Raw(str_args)
-                                    ])
+                                     ])
         wait_for_health = self.config.get('wait-for-health', True)
         if wait_for_health:
             self.wait_for_ceph_health()
