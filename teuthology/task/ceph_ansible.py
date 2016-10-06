@@ -4,6 +4,7 @@ import os
 import logging
 import re
 import time
+from tempfile import NamedTemporaryFile
 
 from cStringIO import StringIO
 
@@ -175,10 +176,10 @@ class CephAnsible(ansible.Ansible):
                                          'ceph-ansible'])
             else:
                 installer_node.run(args=['sudo', 'apt-get', 'remove',
-                                         '-y', 'ceph-ansible'])            
+                                         '-y', 'ceph-ansible'])
             self.ctx.cluster.run(args=['sudo', 'reboot'], wait=False)
             time.sleep(30)
-            log.info("Waiting for reconnect after reboot")            
+            log.info("Waiting for reconnect after reboot")
             reconnect(self.ctx, 480)
             self.ctx.cluster.run(args=['sudo', 'rm', '-rf', '/var/lib/ceph'],
                                  check_status=False)
@@ -186,9 +187,13 @@ class CephAnsible(ansible.Ansible):
             self.ctx.cluster.run(args=['sudo', 'rm', '-rf',
                                        run.Raw('/etc/systemd/system/ceph*')],
                                  check_status=False)
-            self.ctx.cluster.run(args=['sudo', 'rm', '-rf',
-                                       run.Raw('/etc/systemd/system/multi-user.target.wants/ceph*')],
-                                 check_status=False)
+            self.ctx.cluster.run(
+                args=[
+                    'sudo',
+                    'rm',
+                    '-rf',
+                    run.Raw('/etc/systemd/system/multi-user.target.wants/ceph*')],
+                check_status=False)
         else:
             super(CephAnsible, self).teardown()
 
@@ -240,6 +245,16 @@ class CephAnsible(ansible.Ansible):
         self.inventory = self._write_hosts_file(hosts_stringio.read().strip())
         self.generated_inventory = True
 
+    def _write_hosts_file(self, content):
+        """
+        Actually write the hosts file
+        """
+        hosts_file = NamedTemporaryFile(prefix="teuth_ansible_hosts_",
+                                        delete=False)
+        hosts_file.write(content)
+        hosts_file.flush()
+        return hosts_file.name
+
     def get_host_vars(self, remote):
         extra_vars = self.config.get('vars', dict())
         host_vars = dict()
@@ -287,19 +302,22 @@ class CephAnsible(ansible.Ansible):
                                          'install', 'ceph-common'])
                     teuthology.sudo_write_file(remote, '/etc/ceph/ceph.conf',
                                                ceph_conf_contents.getvalue())
-                    teuthology.sudo_write_file(remote,
-                                               '/etc/ceph/ceph.client.admin.keyring',
-                                               ceph_admin_keyring.getvalue())
+                    teuthology.sudo_write_file(
+                        remote,
+                        '/etc/ceph/ceph.client.admin.keyring',
+                        ceph_admin_keyring.getvalue())
 
     def set_groupvars(self, installer):
         gvars = self.config.get('group_vars')
         for var in gvars.iterkeys():
-            file = "/tmp/" + var
+            tmpfile = NamedTemporaryFile(mode='w', dir='/tmp', delete=False)
+            temp_file = tmpfile.name
             all_vars = gvars[var]
-            with open(file, 'w') as f:
+            with open(temp_file, 'w') as f:
                 f.write(yaml.dump(all_vars, default_flow_style=False))
-            installer.put_file(file, "ceph-ansible/group_vars/" + var )
-            
+            installer.put_file(temp_file, "ceph-ansible/group_vars/" + var)
+
+
 class CephAnsibleError(Exception):
     pass
 
