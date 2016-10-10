@@ -2,6 +2,7 @@ import logging
 import os
 
 from teuthology.orchestra.cluster import Cluster
+from teuthology.exit import exiter
 
 from . import Task
 
@@ -43,6 +44,7 @@ class ConsoleLog(Task):
             return
         super(ConsoleLog, self).setup()
         self.processes = list()
+        self.signal_handlers = list()
         self.setup_archive()
 
     def setup_archive(self):
@@ -65,6 +67,13 @@ class ConsoleLog(Task):
                 "%s.log" % remote.shortname,
             )
             proc = remote.console.spawn_sol_log(log_path)
+
+            # Install a signal handler to make sure the console-logging process
+            # is terminated if the job is killed
+            def kill_console_logger(signal_, frame):
+                proc.terminate()
+            exiter.add_handler(15, kill_console_logger)
+
             self.processes.append(proc)
 
     def end(self):
@@ -81,6 +90,10 @@ class ConsoleLog(Task):
                 proc.kill()
             else:
                 proc.terminate()
+
+        # Remove any signal handlers
+        for handler in self.signal_handlers:
+            handler.remove()
 
     def teardown(self):
         if not self.enabled:
